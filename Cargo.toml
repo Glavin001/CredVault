@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/credvault-core", "crates/credvault-cli"]
+members = ["crates/credvault-core", "crates/credvault-cli", "crates/credvault-gui"]
 resolver = "2"
 
 [workspace.package]
