@@ -1,0 +1,55 @@
+{
+  "id": "chrome-work-fixture",
+  "name": "Chrome (Fixture Work Profile)",
+  "platform": "fixture",
+  "browser_kind": "chrome",
+  "profiles": [
+    {
+      "id": "profile-1",
+      "name": "Work",
+      "path": "fixtures/chrome-work",
+      "is_default": false
+    }
+  ],
+  "entries": [
+    {
+      "id": "chrome-work-fixture:login:github-glavin",
+      "credential_type": "password",
+      "domain": "github.com",
+      "url": "https://github.com/login",
+      "username": "glavin",
+      "label": "GitHub Work Session",
+      "created": "2026-03-01T14:00:00Z",
+      "last_used": "2026-03-07T19:00:00Z",
+      "modified": "2026-03-07T19:00:00Z",
+      "tags": ["dev", "work"],
+      "secret": "fixture-github-password-work"
+    },
+    {
+      "id": "chrome-work-fixture:login:console-aws",
+      "credential_type": "password",
+      "domain": "console.aws.amazon.com",
+      "url": "https://console.aws.amazon.com/",
+      "username": "admin@acme",
+      "label": "AWS Console",
+      "created": "2026-03-04T10:05:00Z",
+      "last_used": "2026-03-06T09:10:00Z",
+      "modified": "2026-03-06T09:10:00Z",
+      "tags": ["cloud", "work"],
+      "secret": "fixture-aws-password"
+    },
+    {
+      "id": "chrome-work-fixture:cookie:vercel-session",
+      "credential_type": "cookie",
+      "domain": ".vercel.com",
+      "url": "https://vercel.com/",
+      "username": "glavin",
+      "label": "Vercel Session Cookie",
+      "created": "2026-03-05T08:00:00Z",
+      "last_used": "2026-03-07T08:30:00Z",
+      "modified": "2026-03-07T08:30:00Z",
+      "tags": ["deploy", "session"],
+      "secret": "fixture-vercel-session-cookie"
+    }
+  ]
+}

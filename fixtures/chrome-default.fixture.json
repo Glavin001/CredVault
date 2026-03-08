@@ -1,0 +1,55 @@
+{
+  "id": "chrome-default-fixture",
+  "name": "Chrome (Fixture Default Profile)",
+  "platform": "fixture",
+  "browser_kind": "chrome",
+  "profiles": [
+    {
+      "id": "default",
+      "name": "Default",
+      "path": "fixtures/chrome-default",
+      "is_default": true
+    }
+  ],
+  "entries": [
+    {
+      "id": "chrome-default-fixture:login:github-glavin",
+      "credential_type": "password",
+      "domain": "github.com",
+      "url": "https://github.com/login",
+      "username": "glavin",
+      "label": "GitHub",
+      "created": "2026-03-01T12:00:00Z",
+      "last_used": "2026-03-07T18:00:00Z",
+      "modified": "2026-03-07T18:00:00Z",
+      "tags": ["dev", "vcs"],
+      "secret": "fixture-github-password-default"
+    },
+    {
+      "id": "chrome-default-fixture:login:vercel-glavin",
+      "credential_type": "password",
+      "domain": "vercel.com",
+      "url": "https://vercel.com/login",
+      "username": "glavin",
+      "label": "Vercel",
+      "created": "2026-03-02T09:30:00Z",
+      "last_used": "2026-03-06T16:45:00Z",
+      "modified": "2026-03-06T16:45:00Z",
+      "tags": ["deploy"],
+      "secret": "fixture-vercel-password"
+    },
+    {
+      "id": "chrome-default-fixture:api:openai",
+      "credential_type": "api-key",
+      "domain": "api.openai.com",
+      "url": "https://platform.openai.com/",
+      "username": null,
+      "label": "OpenAI API Key",
+      "created": "2026-03-03T08:15:00Z",
+      "last_used": "2026-03-07T11:20:00Z",
+      "modified": "2026-03-07T11:20:00Z",
+      "tags": ["ai", "api"],
+      "secret": "sk-fixture-openai-key"
+    }
+  ]
+}

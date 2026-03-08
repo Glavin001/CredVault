@@ -1,0 +1,30 @@
+[workspace]
+members = [
+  "crates/credvault-core",
+  "crates/credvault-cli",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+repository = "https://github.com/example/credvault"
+authors = ["CredVault Contributors"]
+
+[workspace.dependencies]
+aes-gcm = "0.10"
+argon2 = "0.5"
+assert_cmd = "2"
+base64ct = "=1.6.0"
+chrono = { version = "0.4", features = ["clock", "serde"] }
+clap = { version = "4.5", features = ["derive"] }
+csv = "1.4"
+napi = { version = "3", default-features = false, features = ["napi9"] }
+napi-derive = "3"
+predicates = "3"
+rand = "0.8"
+secrecy = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
