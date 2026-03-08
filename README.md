@@ -66,9 +66,38 @@ credvault/
 │   │   ├── adapter/       # Source adapters (chromium, firefox, etc.)
 │   │   ├── crypto/        # Decryption & bundle encryption
 │   │   └── platform/      # OS-specific abstractions
-│   └── credvault-cli/     # CLI binary
+│   ├── credvault-cli/     # CLI binary
+│   └── credvault-gui/     # Tauri desktop app (React + TypeScript)
 └── tests/                 # Integration tests
 ```
+
+## GUI App
+
+CredVault includes a cross-platform desktop GUI built with [Tauri](https://v2.tauri.app/) + React.
+
+### Running the GUI locally
+
+```bash
+# Install frontend dependencies
+npm ci --prefix crates/credvault-gui/src-ui
+
+# Build the frontend
+npm run build --prefix crates/credvault-gui/src-ui
+
+# Build the Tauri app
+cargo install tauri-cli --version "^2"
+cargo tauri build
+```
+
+### macOS: "app is damaged" warning
+
+CI-built macOS binaries are not code-signed, so macOS Gatekeeper will block them. To run the app after downloading:
+
+```bash
+xattr -cr /path/to/CredVault.app
+```
+
+Then open it normally. This is expected for unsigned apps and does not indicate actual damage.
 
 ## Development
 
