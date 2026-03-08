@@ -7,6 +7,7 @@
 use crate::adapter::{DetectedSource, SourceAdapter};
 use crate::crypto::chromium::{
     decrypt_chromium_password, decrypt_chromium_password_windows, encrypt_chromium_password,
+    encrypt_chromium_password_windows,
 };
 use crate::platform;
 use crate::types::*;
@@ -714,6 +715,15 @@ fn chrome_timestamp_to_datetime(timestamp: Option<i64>) -> Option<chrono::DateTi
 // Test utilities for creating mock Chrome databases
 // ============================================================
 
+/// Encrypt a password using the platform-appropriate method (matching `decrypt_password`).
+fn encrypt_test_password(plaintext: &str, encryption_key: &str) -> Vec<u8> {
+    if cfg!(target_os = "windows") {
+        encrypt_chromium_password_windows(plaintext, encryption_key)
+    } else {
+        encrypt_chromium_password(plaintext, encryption_key)
+    }
+}
+
 /// Create a mock Chrome Login Data SQLite database for testing.
 pub fn create_test_login_db(
     path: &Path,
@@ -771,7 +781,7 @@ pub fn create_test_login_db(
     )?;
 
     for entry in entries {
-        let encrypted = encrypt_chromium_password(&entry.password, encryption_key);
+        let encrypted = encrypt_test_password(&entry.password, encryption_key);
         let signon_realm = format!(
             "{}://{}",
             if entry.url.starts_with("https") {
@@ -847,7 +857,7 @@ pub fn create_test_webdata_db(
     )?;
 
     for (i, entry) in entries.iter().enumerate() {
-        let encrypted = encrypt_chromium_password(&entry.card_number, encryption_key);
+        let encrypted = encrypt_test_password(&entry.card_number, encryption_key);
         stmt.execute(rusqlite::params![
             format!("guid-{i:04}"),
             entry.name_on_card,
@@ -865,11 +875,23 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    /// Returns a test encryption key appropriate for the current platform.
+    /// On Windows, this is a base64-encoded 32-byte key (for AES-256-GCM).
+    /// On macOS/Linux, this is a plain string (for PBKDF2 key derivation).
+    fn test_encryption_key() -> &'static str {
+        if cfg!(target_os = "windows") {
+            // base64 of 32 zero bytes — valid AES-256 key for testing
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        } else {
+            "test-key-for-unit-tests"
+        }
+    }
+
     fn create_test_adapter(
         temp_dir: &TempDir,
         entries: &[TestLoginEntry],
     ) -> (ChromiumAdapter, Profile) {
-        let encryption_key = "test-key-for-unit-tests";
+        let encryption_key = test_encryption_key();
         let profile_dir = temp_dir.path().join("Default");
         std::fs::create_dir_all(&profile_dir).unwrap();
 
@@ -1067,7 +1089,7 @@ mod tests {
     #[test]
     fn test_multiple_profiles() {
         let temp = TempDir::new().unwrap();
-        let encryption_key = "test-key";
+        let encryption_key = test_encryption_key();
 
         // Create Default profile
         let default_dir = temp.path().join("Default");
@@ -1126,7 +1148,7 @@ mod tests {
     #[test]
     fn test_credit_card_list_and_extract() {
         let temp = TempDir::new().unwrap();
-        let encryption_key = "cc-test-key";
+        let encryption_key = test_encryption_key();
         let profile_dir = temp.path().join("Default");
         std::fs::create_dir_all(&profile_dir).unwrap();
 
