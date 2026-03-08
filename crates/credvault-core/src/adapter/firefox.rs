@@ -101,18 +101,17 @@ impl FirefoxAdapter {
             )));
         }
 
-        // Copy key4.db to temp to avoid lock conflicts
-        let temp_dir = std::env::temp_dir();
-        let temp_db = temp_dir.join(format!("credvault_key4_{}.db", uuid::Uuid::new_v4()));
-        std::fs::copy(&key4_path, &temp_db)?;
+        // Copy key4.db to a NamedTempFile (auto-deleted on drop, even on crash).
+        // Open read-only to guarantee we never modify the original.
+        use std::io::Write;
+        let data = std::fs::read(&key4_path)?;
+        let mut temp = tempfile::NamedTempFile::new().map_err(Error::Io)?;
+        temp.write_all(&data).map_err(Error::Io)?;
+        temp.flush().map_err(Error::Io)?;
 
-        let result = (|| {
-            let global_salt = firefox::read_key4_metadata(&temp_db)?;
-            firefox::extract_master_key(&temp_db, &global_salt)
-        })();
-
-        let _ = std::fs::remove_file(&temp_db);
-        result
+        let global_salt = firefox::read_key4_metadata(temp.path())?;
+        firefox::extract_master_key(temp.path(), &global_salt)
+        // temp is dropped here → file auto-deleted
     }
 }
 

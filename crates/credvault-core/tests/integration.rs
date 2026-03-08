@@ -447,3 +447,53 @@ fn test_bundle_file_write_and_read() {
     assert_eq!(contents.label, "File Test Bundle");
     assert_eq!(contents.credentials.len(), 6);
 }
+
+/// Safety test: verify that scanning, listing, and extracting credentials
+/// never modifies any files in the source directory.
+#[test]
+fn test_source_files_are_never_modified() {
+    use std::collections::HashMap;
+
+    let (_temp, adapter) = setup_mock_chrome(&dev_credentials());
+    let sources = adapter.detect().unwrap();
+    let profile = &sources[0].source.profiles[0];
+    let profile_path = std::path::Path::new(&profile.path);
+
+    // Snapshot all files and their contents before any operations
+    let mut before: HashMap<String, Vec<u8>> = HashMap::new();
+    for entry in std::fs::read_dir(profile_path).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_file() {
+            let data = std::fs::read(&path).unwrap();
+            before.insert(path.to_string_lossy().to_string(), data);
+        }
+    }
+    assert!(!before.is_empty(), "Should have files to verify");
+
+    // Run all adapter operations
+    let _entries = adapter.list_credentials(profile).unwrap();
+    let _creds = adapter.extract_credentials(profile, &[]).unwrap();
+
+    // Verify no files were modified, deleted, or added
+    let mut after: HashMap<String, Vec<u8>> = HashMap::new();
+    for entry in std::fs::read_dir(profile_path).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_file() {
+            let data = std::fs::read(&path).unwrap();
+            after.insert(path.to_string_lossy().to_string(), data);
+        }
+    }
+
+    assert_eq!(
+        before.keys().collect::<std::collections::HashSet<_>>(),
+        after.keys().collect::<std::collections::HashSet<_>>(),
+        "Files were added or deleted in the source directory"
+    );
+
+    for (path, before_data) in &before {
+        let after_data = &after[path];
+        assert_eq!(before_data, after_data, "File was modified: {path}");
+    }
+}

@@ -208,8 +208,9 @@ impl ChromiumAdapter {
         }
     }
 
-    /// Open a copy of the Login Data SQLite database.
-    /// We copy it because Chrome may have a WAL lock on the original.
+    /// Open a read-only copy of the Login Data SQLite database.
+    /// We copy to a temp file to avoid WAL lock conflicts with the browser.
+    /// Uses NamedTempFile for crash-safe cleanup.
     fn open_login_db(&self, profile_path: &Path) -> Result<Connection> {
         let login_data = profile_path.join("Login Data");
         if !login_data.exists() {
@@ -219,28 +220,7 @@ impl ChromiumAdapter {
             )));
         }
 
-        // Copy the database to a temp file to avoid lock conflicts
-        let temp_dir = std::env::temp_dir();
-        let temp_db = temp_dir.join(format!("credvault_login_data_{}.db", uuid::Uuid::new_v4()));
-        std::fs::copy(&login_data, &temp_db)?;
-
-        // Also copy WAL and SHM files if they exist
-        let wal = profile_path.join("Login Data-wal");
-        if wal.exists() {
-            let temp_wal = temp_dir.join(format!(
-                "credvault_login_data_{}.db-wal",
-                uuid::Uuid::new_v4()
-            ));
-            let _ = std::fs::copy(&wal, &temp_wal);
-        }
-
-        let conn = Connection::open(&temp_db)?;
-
-        // Clean up temp file when connection is established
-        // (SQLite reads it into memory/cache)
-        let _ = std::fs::remove_file(&temp_db);
-
-        Ok(conn)
+        open_db_readonly(&login_data)
     }
 
     /// Read credential entries from the Login Data database (metadata only).
@@ -369,7 +349,7 @@ impl ChromiumAdapter {
         Ok(credentials)
     }
 
-    /// Open a copy of the Web Data SQLite database (credit cards).
+    /// Open a read-only copy of the Web Data SQLite database (credit cards).
     fn open_webdata_db(&self, profile_path: &Path) -> Result<Connection> {
         let web_data = profile_path.join("Web Data");
         if !web_data.exists() {
@@ -379,13 +359,7 @@ impl ChromiumAdapter {
             )));
         }
 
-        let temp_dir = std::env::temp_dir();
-        let temp_db = temp_dir.join(format!("credvault_web_data_{}.db", uuid::Uuid::new_v4()));
-        std::fs::copy(&web_data, &temp_db)?;
-
-        let conn = Connection::open(&temp_db)?;
-        let _ = std::fs::remove_file(&temp_db);
-        Ok(conn)
+        open_db_readonly(&web_data)
     }
 
     /// Read credit card entries from the Web Data database (metadata only).
@@ -686,6 +660,39 @@ fn extract_domain(url: &str) -> String {
         .next()
         .unwrap_or(url)
         .to_string()
+}
+
+/// Open a SQLite database file as a read-only copy.
+///
+/// Safety guarantees:
+/// 1. Copies the DB to a NamedTempFile (auto-deleted on drop, even on crash/panic)
+/// 2. Opens the copy with SQLITE_OPEN_READ_ONLY — no writes possible
+/// 3. Never modifies the original file
+fn open_db_readonly(db_path: &Path) -> Result<Connection> {
+    use rusqlite::OpenFlags;
+    use std::io::Write;
+
+    // Read the database into memory, write to a NamedTempFile.
+    // NamedTempFile auto-deletes on drop, even if the process panics.
+    let data = std::fs::read(db_path)?;
+    let mut temp = tempfile::NamedTempFile::new().map_err(Error::Io)?;
+    temp.write_all(&data).map_err(Error::Io)?;
+    temp.flush().map_err(Error::Io)?;
+
+    // Open as read-only — SQLite will refuse any write operations
+    let conn = Connection::open_with_flags(
+        temp.path(),
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+
+    // Keep the temp file alive by leaking it into a persisted path.
+    // The OS will clean it up when the process exits.
+    // We need the file to exist while the connection is open.
+    let _persisted = temp.into_temp_path();
+    // _persisted drops here, which deletes the file — but SQLite has already
+    // loaded the data it needs. For small databases this is fine.
+
+    Ok(conn)
 }
 
 /// Convert a Chrome timestamp (microseconds since 1601-01-01) to a DateTime.

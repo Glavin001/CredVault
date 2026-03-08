@@ -28,7 +28,10 @@ const OID_HMAC_SHA256: &[u8] = &[0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x09]
 ///
 /// Tries empty master password first (most common), fails if a master password is set.
 pub fn extract_master_key(key4_path: &Path, global_salt: &[u8]) -> Result<Vec<u8>> {
-    let conn = rusqlite::Connection::open(key4_path)?;
+    let conn = rusqlite::Connection::open_with_flags(
+        key4_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
 
     // Read the encrypted master key from nssPrivate table
     let a11: Vec<u8> = conn
@@ -50,7 +53,10 @@ pub fn extract_master_key(key4_path: &Path, global_salt: &[u8]) -> Result<Vec<u8
 
 /// Read global salt and verify the password check from key4.db metaData.
 pub fn read_key4_metadata(key4_path: &Path) -> Result<Vec<u8>> {
-    let conn = rusqlite::Connection::open(key4_path)?;
+    let conn = rusqlite::Connection::open_with_flags(
+        key4_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
 
     let (item1, item2): (Vec<u8>, Vec<u8>) = conn
         .query_row(
