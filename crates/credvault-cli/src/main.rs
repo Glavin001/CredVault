@@ -28,6 +28,7 @@ impl Cli {
     fn vault_config(&self) -> VaultConfig {
         VaultConfig {
             chromium_data_dir: self.data_dir.clone(),
+            firefox_data_dir: None,
             encryption_key: self.encryption_key.clone(),
         }
     }

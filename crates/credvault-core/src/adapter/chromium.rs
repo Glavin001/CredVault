@@ -1,4 +1,4 @@
-//! Chromium-based browser adapter (Chrome, Edge, Brave, Vivaldi, Arc, Opera).
+//! Chromium-based browser adapter (Chromium, Chrome/Edge channels, Brave, Vivaldi, Opera, Arc).
 //!
 //! All Chromium browsers share the same storage format:
 //! - Passwords in SQLite "Login Data" DB
@@ -31,7 +31,7 @@ pub struct ChromiumConfig {
 
 /// Return configurations for all known Chromium-based browsers.
 pub fn chromium_configs() -> Vec<ChromiumConfig> {
-    vec![
+    let mut configs = vec![
         ChromiumConfig {
             browser: BrowserKind::Chrome,
             name: "Chrome",
@@ -72,15 +72,70 @@ pub fn chromium_configs() -> Vec<ChromiumConfig> {
             windows_subpath: "Opera Software\\Opera Stable",
             keychain_service: "Opera Safe Storage",
         },
-        ChromiumConfig {
+    ];
+
+    #[cfg(target_os = "linux")]
+    {
+        configs.splice(
+            0..0,
+            [
+                ChromiumConfig {
+                    browser: BrowserKind::Chromium,
+                    name: "Chromium",
+                    macos_subpath: "Chromium",
+                    linux_subpath: "chromium",
+                    windows_subpath: "Chromium\\User Data",
+                    keychain_service: "Chromium Safe Storage",
+                },
+                ChromiumConfig {
+                    browser: BrowserKind::Chrome,
+                    name: "Chrome Beta",
+                    macos_subpath: "Google/Chrome Beta",
+                    linux_subpath: "google-chrome-beta",
+                    windows_subpath: "Google\\Chrome Beta\\User Data",
+                    keychain_service: "Chrome Safe Storage",
+                },
+                ChromiumConfig {
+                    browser: BrowserKind::Chrome,
+                    name: "Chrome Dev",
+                    macos_subpath: "Google/Chrome Dev",
+                    linux_subpath: "google-chrome-unstable",
+                    windows_subpath: "Google\\Chrome SxS\\User Data",
+                    keychain_service: "Chrome Safe Storage",
+                },
+                ChromiumConfig {
+                    browser: BrowserKind::Edge,
+                    name: "Edge Beta",
+                    macos_subpath: "Microsoft Edge Beta",
+                    linux_subpath: "microsoft-edge-beta",
+                    windows_subpath: "Microsoft\\Edge Beta\\User Data",
+                    keychain_service: "Microsoft Edge Safe Storage",
+                },
+                ChromiumConfig {
+                    browser: BrowserKind::Edge,
+                    name: "Edge Dev",
+                    macos_subpath: "Microsoft Edge Dev",
+                    linux_subpath: "microsoft-edge-dev",
+                    windows_subpath: "Microsoft\\Edge Dev\\User Data",
+                    keychain_service: "Microsoft Edge Safe Storage",
+                },
+            ],
+        );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        configs.push(ChromiumConfig {
             browser: BrowserKind::Arc,
             name: "Arc",
             macos_subpath: "Arc/User Data",
             linux_subpath: "arc/User Data",
             windows_subpath: "Arc\\User Data",
             keychain_service: "Arc Safe Storage",
-        },
-    ]
+        });
+    }
+
+    configs
 }
 
 /// Adapter for all Chromium-based browsers.
@@ -886,6 +941,31 @@ pub fn create_test_webdata_db(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_linux_configs_include_linux_relevant_browsers() {
+        let names: Vec<&str> = chromium_configs()
+            .iter()
+            .map(|config| config.name)
+            .collect();
+
+        for expected in [
+            "Chromium",
+            "Chrome",
+            "Chrome Beta",
+            "Chrome Dev",
+            "Edge",
+            "Edge Beta",
+            "Edge Dev",
+            "Brave",
+            "Vivaldi",
+            "Opera",
+        ] {
+            assert!(names.contains(&expected), "missing config: {expected}");
+        }
+        assert!(!names.contains(&"Arc"));
+    }
 
     fn create_test_adapter(
         temp_dir: &TempDir,
