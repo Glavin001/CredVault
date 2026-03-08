@@ -272,10 +272,7 @@ async fn cmd_list(
     println!("\n  {} credentials found", index.entries.len());
 
     if !index.duplicates.is_empty() {
-        println!(
-            "  {} duplicate groups detected",
-            index.duplicates.len()
-        );
+        println!("  {} duplicate groups detected", index.duplicates.len());
         for dup in &index.duplicates {
             println!(
                 "    -> {}{}: {:?}",
@@ -291,6 +288,7 @@ async fn cmd_list(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn cmd_export(
     config: &VaultConfig,
     ids: Option<String>,
@@ -302,9 +300,7 @@ async fn cmd_export(
     password_stdin: bool,
     password_arg: Option<String>,
 ) -> anyhow::Result<()> {
-    let format: BundleFormat = format_str
-        .parse()
-        .map_err(|e: String| anyhow::anyhow!(e))?;
+    let format: BundleFormat = format_str.parse().map_err(|e: String| anyhow::anyhow!(e))?;
 
     // Get the password for the bundle
     let password = if let Some(pw) = password_arg {
@@ -375,7 +371,11 @@ async fn cmd_export(
     Ok(())
 }
 
-fn cmd_read(path: PathBuf, password_stdin: bool, password_arg: Option<String>) -> anyhow::Result<()> {
+fn cmd_read(
+    path: PathBuf,
+    password_stdin: bool,
+    password_arg: Option<String>,
+) -> anyhow::Result<()> {
     let data = std::fs::read(&path)?;
 
     let password = if let Some(pw) = password_arg {
@@ -393,7 +393,10 @@ fn cmd_read(path: PathBuf, password_stdin: bool, password_arg: Option<String>) -
 
     let contents = credvault_core::read_bundle(&data, &password)?;
 
-    println!("Bundle: \"{}\" (ID: {})", contents.label, contents.bundle_id);
+    println!(
+        "Bundle: \"{}\" (ID: {})",
+        contents.label, contents.bundle_id
+    );
     println!("  Created: {}", contents.created.to_rfc3339());
     if let Some(exp) = contents.expires {
         println!("  Expires: {}", exp.to_rfc3339());

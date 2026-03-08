@@ -183,10 +183,7 @@ fn create_agent_config_bundle(
 
 /// Convert a domain name to an environment variable key.
 fn domain_to_env_key(domain: &str) -> String {
-    domain
-        .to_uppercase()
-        .replace('.', "_")
-        .replace('-', "_")
+    domain.to_uppercase().replace(['.', '-'], "_")
 }
 
 #[cfg(test)]

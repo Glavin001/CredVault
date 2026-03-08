@@ -162,8 +162,8 @@ impl CredentialFilter {
     pub fn matches(&self, entry: &CredentialEntry) -> bool {
         if let Some(ref domains) = self.domains {
             let domain_match = domains.iter().any(|d| {
-                if d.starts_with('*') {
-                    entry.domain.ends_with(&d[1..])
+                if let Some(stripped) = d.strip_prefix('*') {
+                    entry.domain.ends_with(stripped)
                 } else {
                     entry.domain == *d
                 }
@@ -174,7 +174,7 @@ impl CredentialFilter {
         }
 
         if let Some(ref sources) = self.sources {
-            if !sources.iter().any(|s| entry.source_id == *s) {
+            if !sources.contains(&entry.source_id) {
                 return false;
             }
         }

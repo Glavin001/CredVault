@@ -169,13 +169,14 @@ impl ChromiumAdapter {
 
         #[cfg(target_os = "linux")]
         {
-            platform::linux::get_chromium_encryption_key(self.config.keychain_service)
-                .ok_or_else(|| {
+            platform::linux::get_chromium_encryption_key(self.config.keychain_service).ok_or_else(
+                || {
                     Error::AuthRequired(
                         self.config.name.to_string(),
                         "Could not retrieve encryption key from keyring".to_string(),
                     )
-                })
+                },
+            )
         }
 
         #[cfg(target_os = "windows")]
@@ -199,10 +200,7 @@ impl ChromiumAdapter {
 
         // Copy the database to a temp file to avoid lock conflicts
         let temp_dir = std::env::temp_dir();
-        let temp_db = temp_dir.join(format!(
-            "credvault_login_data_{}.db",
-            uuid::Uuid::new_v4()
-        ));
+        let temp_db = temp_dir.join(format!("credvault_login_data_{}.db", uuid::Uuid::new_v4()));
         std::fs::copy(&login_data, &temp_db)?;
 
         // Also copy WAL and SHM files if they exist
@@ -379,9 +377,7 @@ impl SourceAdapter for ChromiumAdapter {
         let source_id = format!(
             "{}-{}",
             self.config.name.to_lowercase(),
-            profiles
-                .first()
-                .map_or("unknown", |p| p.id.as_str())
+            profiles.first().map_or("unknown", |p| p.id.as_str())
         )
         .to_lowercase()
         .replace(' ', "-");
@@ -766,10 +762,7 @@ mod tests {
             extract_domain("https://console.aws.amazon.com/"),
             "console.aws.amazon.com"
         );
-        assert_eq!(
-            extract_domain("http://localhost:8080/api"),
-            "localhost"
-        );
+        assert_eq!(extract_domain("http://localhost:8080/api"), "localhost");
         assert_eq!(extract_domain("github.com"), "github.com");
     }
 
