@@ -3,7 +3,7 @@
 ## Completed
 
 ### Core Features
-- **Chromium adapter** — Chrome, Edge, Brave, Vivaldi, Opera, Arc (passwords + credit cards)
+- **Chromium adapter** — Chromium, Chrome/Edge channels, Brave, Vivaldi, Opera, Arc (passwords + credit cards)
 - **Firefox adapter** — Full NSS/PKCS#11 decryption from logins.json + key4.db
 - **Windows DPAPI** — CryptUnprotectData for Chromium key extraction
 - **macOS Keychain** — `security find-generic-password` integration

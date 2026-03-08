@@ -39,12 +39,15 @@ credvault read dev-creds.credvault
 
 | Source | Status |
 |--------|--------|
+| Chromium | ✓ (Linux) |
 | Chrome | ✓ (macOS, Linux) |
+| Chrome Beta / Dev | ✓ (Linux) |
 | Edge | ✓ (macOS, Linux) |
+| Edge Beta / Dev | ✓ (Linux) |
 | Brave | ✓ (macOS, Linux) |
 | Vivaldi | ✓ (macOS, Linux) |
 | Opera | ✓ (macOS, Linux) |
-| Firefox | Planned |
+| Firefox | ✓ (macOS, Linux, Windows) |
 | Safari | Planned |
 | macOS Keychain | Planned |
 | 1Password | Planned |

@@ -26,6 +26,7 @@ pub enum SourceType {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum BrowserKind {
+    Chromium,
     Chrome,
     Edge,
     Brave,
@@ -39,6 +40,7 @@ pub enum BrowserKind {
 impl BrowserKind {
     pub fn display_name(&self) -> &'static str {
         match self {
+            Self::Chromium => "Chromium",
             Self::Chrome => "Chrome",
             Self::Edge => "Edge",
             Self::Brave => "Brave",
