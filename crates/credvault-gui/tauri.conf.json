@@ -10,7 +10,6 @@
     "beforeBuildCommand": "npm run build --prefix src-ui"
   },
   "app": {
-    "title": "CredVault",
     "windows": [
       {
         "label": "main",
