@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use comfy_table::{presets::UTF8_FULL, Table};
-use credvault_core::{BundleFormat, BundleOptions, CredentialFilter, CredentialType};
+use credvault_core::{BundleFormat, BundleOptions, CredentialFilter, CredentialType, VaultConfig};
 use secrecy::SecretString;
 use std::path::PathBuf;
 
@@ -12,8 +12,25 @@ use std::path::PathBuf;
     long_about = "CredVault discovers credential stores on your machine, lets you select a subset,\nand packages them into an encrypted, portable bundle."
 )]
 struct Cli {
+    /// Override browser data directory (for testing)
+    #[arg(long, global = true)]
+    data_dir: Option<PathBuf>,
+
+    /// Override encryption key (bypasses OS keychain)
+    #[arg(long, global = true)]
+    encryption_key: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
+}
+
+impl Cli {
+    fn vault_config(&self) -> VaultConfig {
+        VaultConfig {
+            chromium_data_dir: self.data_dir.clone(),
+            encryption_key: self.encryption_key.clone(),
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -69,6 +86,10 @@ enum Commands {
         /// Read password from stdin (for non-interactive use)
         #[arg(long)]
         password_stdin: bool,
+
+        /// Provide password directly (for testing; prefer --password-stdin in production)
+        #[arg(long)]
+        password: Option<String>,
     },
 
     /// Read and display contents of a CredVault bundle
@@ -79,6 +100,21 @@ enum Commands {
         /// Read password from stdin
         #[arg(long)]
         password_stdin: bool,
+
+        /// Provide password directly (for testing)
+        #[arg(long)]
+        password: Option<String>,
+    },
+
+    /// Create a mock browser profile with test credentials (for testing)
+    TestSetup {
+        /// Directory to create the mock profile in
+        #[arg(long)]
+        output_dir: PathBuf,
+
+        /// Encryption key to use for the mock data
+        #[arg(long, default_value = "test-key")]
+        key: String,
     },
 }
 
@@ -93,15 +129,16 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
+    let config = cli.vault_config();
 
     match cli.command {
-        Commands::Scan => cmd_scan().await?,
+        Commands::Scan => cmd_scan(&config).await?,
         Commands::List {
             source,
             domain,
             search,
             cred_type,
-        } => cmd_list(source, domain, search, cred_type).await?,
+        } => cmd_list(&config, source, domain, search, cred_type).await?,
         Commands::Export {
             ids,
             domain,
@@ -110,22 +147,36 @@ async fn main() -> anyhow::Result<()> {
             label,
             expires,
             password_stdin,
+            password,
         } => {
-            cmd_export(ids, domain, format, output, label, expires, password_stdin).await?;
+            cmd_export(
+                &config,
+                ids,
+                domain,
+                format,
+                output,
+                label,
+                expires,
+                password_stdin,
+                password,
+            )
+            .await?;
         }
         Commands::Read {
             path,
             password_stdin,
-        } => cmd_read(path, password_stdin)?,
+            password,
+        } => cmd_read(path, password_stdin, password)?,
+        Commands::TestSetup { output_dir, key } => cmd_test_setup(output_dir, key)?,
     }
 
     Ok(())
 }
 
-async fn cmd_scan() -> anyhow::Result<()> {
+async fn cmd_scan(config: &VaultConfig) -> anyhow::Result<()> {
     eprintln!("Scanning for credential sources...\n");
 
-    let sources = credvault_core::discover_sources().await?;
+    let sources = credvault_core::discover_sources_with_config(config).await?;
 
     if sources.is_empty() {
         eprintln!("No credential sources found on this machine.");
@@ -140,10 +191,10 @@ async fn cmd_scan() -> anyhow::Result<()> {
 
     for source in &sources {
         let status = match source.status {
-            credvault_core::SourceStatus::Accessible => "✓",
-            credvault_core::SourceStatus::Locked => "🔒",
-            credvault_core::SourceStatus::RequiresAuth => "🔑",
-            credvault_core::SourceStatus::NotFound => "✗",
+            credvault_core::SourceStatus::Accessible => "OK",
+            credvault_core::SourceStatus::Locked => "LOCKED",
+            credvault_core::SourceStatus::RequiresAuth => "AUTH",
+            credvault_core::SourceStatus::NotFound => "MISSING",
         };
 
         table.add_row(vec![
@@ -169,6 +220,7 @@ async fn cmd_scan() -> anyhow::Result<()> {
 }
 
 async fn cmd_list(
+    config: &VaultConfig,
     source: Option<String>,
     domain: Option<String>,
     search: Option<String>,
@@ -195,11 +247,7 @@ async fn cmd_list(
         search,
     };
 
-    let index = credvault_core::list_credentials(
-        None,
-        Some(&filter),
-    )
-    .await?;
+    let index = credvault_core::list_credentials_with_config(config, None, Some(&filter)).await?;
 
     if index.entries.is_empty() {
         eprintln!("No credentials found matching your filters.");
@@ -230,7 +278,7 @@ async fn cmd_list(
         );
         for dup in &index.duplicates {
             println!(
-                "    ↳ {}{}: {:?}",
+                "    -> {}{}: {:?}",
                 dup.domain,
                 dup.username
                     .as_ref()
@@ -244,6 +292,7 @@ async fn cmd_list(
 }
 
 async fn cmd_export(
+    config: &VaultConfig,
     ids: Option<String>,
     domain: Option<String>,
     format_str: String,
@@ -251,13 +300,16 @@ async fn cmd_export(
     label: String,
     expires: Option<String>,
     password_stdin: bool,
+    password_arg: Option<String>,
 ) -> anyhow::Result<()> {
     let format: BundleFormat = format_str
         .parse()
         .map_err(|e: String| anyhow::anyhow!(e))?;
 
     // Get the password for the bundle
-    let password = if format == BundleFormat::CredVault {
+    let password = if let Some(pw) = password_arg {
+        SecretString::from(pw)
+    } else if format == BundleFormat::CredVault {
         if password_stdin {
             let mut pw = String::new();
             std::io::Read::read_to_string(&mut std::io::stdin(), &mut pw)?;
@@ -272,7 +324,7 @@ async fn cmd_export(
     } else {
         // Non-encrypted formats don't need a password
         if format == BundleFormat::Csv {
-            eprintln!("⚠ WARNING: CSV format is plaintext. Passwords will not be encrypted.");
+            eprintln!("WARNING: CSV format is plaintext. Passwords will not be encrypted.");
         }
         SecretString::from(String::new())
     };
@@ -280,27 +332,25 @@ async fn cmd_export(
     // Determine which credentials to export
     let credentials = if let Some(ref ids_str) = ids {
         let entry_ids: Vec<&str> = ids_str.split(',').map(|s| s.trim()).collect();
-        credvault_core::extract_credentials(&entry_ids).await?
+        credvault_core::extract_credentials_with_config(config, &entry_ids).await?
     } else if domain.is_some() {
-        // List + filter by domain, then extract all matches
         let filter = CredentialFilter {
             domains: domain.map(|d| d.split(',').map(|s| s.trim().to_string()).collect()),
             ..Default::default()
         };
-        let index = credvault_core::list_credentials(None, Some(&filter)).await?;
+        let index =
+            credvault_core::list_credentials_with_config(config, None, Some(&filter)).await?;
         let entry_ids: Vec<&str> = index.entries.iter().map(|e| e.id.as_str()).collect();
         if entry_ids.is_empty() {
             anyhow::bail!("No credentials found matching domain filter");
         }
-        credvault_core::extract_credentials(&entry_ids).await?
+        credvault_core::extract_credentials_with_config(config, &entry_ids).await?
     } else {
         anyhow::bail!("Specify --ids or --domain to select credentials for export");
     };
 
     // Parse expiry
-    let expires = expires
-        .map(|e| parse_expiry(&e))
-        .transpose()?;
+    let expires = expires.map(|e| parse_expiry(&e)).transpose()?;
 
     let options = BundleOptions {
         format,
@@ -314,7 +364,7 @@ async fn cmd_export(
     std::fs::write(&output, &bundle_data)?;
 
     eprintln!(
-        "✓ Exported {} credentials to {}",
+        "Exported {} credentials to {}",
         credentials.len(),
         output.display()
     );
@@ -325,10 +375,12 @@ async fn cmd_export(
     Ok(())
 }
 
-fn cmd_read(path: PathBuf, password_stdin: bool) -> anyhow::Result<()> {
+fn cmd_read(path: PathBuf, password_stdin: bool, password_arg: Option<String>) -> anyhow::Result<()> {
     let data = std::fs::read(&path)?;
 
-    let password = if password_stdin {
+    let password = if let Some(pw) = password_arg {
+        SecretString::from(pw)
+    } else if password_stdin {
         let mut pw = String::new();
         std::io::Read::read_to_string(&mut std::io::stdin(), &mut pw)?;
         SecretString::from(pw.trim().to_string())
@@ -368,10 +420,98 @@ fn cmd_read(path: PathBuf, password_stdin: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn cmd_test_setup(output_dir: PathBuf, key: String) -> anyhow::Result<()> {
+    use credvault_core::adapter::chromium::{create_test_login_db, TestLoginEntry};
+
+    let profile_dir = output_dir.join("Default");
+    std::fs::create_dir_all(&profile_dir)?;
+
+    let entries = vec![
+        TestLoginEntry {
+            url: "https://github.com/login".to_string(),
+            username: "developer".to_string(),
+            password: "ghp_xxxxxxxxxxxxxxxxxxxx".to_string(),
+            date_created: Some(13_300_000_000_000_000),
+            date_last_used: Some(13_350_000_000_000_000),
+            date_modified: Some(13_300_000_000_000_000),
+        },
+        TestLoginEntry {
+            url: "https://console.aws.amazon.com/".to_string(),
+            username: "admin@company.com".to_string(),
+            password: "Aws$ecret!2024".to_string(),
+            date_created: Some(13_280_000_000_000_000),
+            date_last_used: Some(13_340_000_000_000_000),
+            date_modified: None,
+        },
+        TestLoginEntry {
+            url: "https://app.vercel.com/login".to_string(),
+            username: "deployer@company.com".to_string(),
+            password: "vercel-token-abc123".to_string(),
+            date_created: Some(13_310_000_000_000_000),
+            date_last_used: Some(13_360_000_000_000_000),
+            date_modified: Some(13_310_000_000_000_000),
+        },
+        TestLoginEntry {
+            url: "https://registry.npmjs.org/".to_string(),
+            username: "npm-user".to_string(),
+            password: "npm_xxxxxxxxxxxx".to_string(),
+            date_created: Some(13_290_000_000_000_000),
+            date_last_used: Some(13_330_000_000_000_000),
+            date_modified: None,
+        },
+        TestLoginEntry {
+            url: "https://accounts.google.com/signin".to_string(),
+            username: "personal@gmail.com".to_string(),
+            password: "gmail-password-456".to_string(),
+            date_created: Some(13_250_000_000_000_000),
+            date_last_used: Some(13_355_000_000_000_000),
+            date_modified: None,
+        },
+        TestLoginEntry {
+            url: "https://gitlab.com/users/sign_in".to_string(),
+            username: "developer".to_string(),
+            password: "gitlab-pass-789".to_string(),
+            date_created: Some(13_270_000_000_000_000),
+            date_last_used: Some(13_345_000_000_000_000),
+            date_modified: None,
+        },
+        TestLoginEntry {
+            url: "https://hub.docker.com/login".to_string(),
+            username: "dockerdev".to_string(),
+            password: "dckr_pat_xxxxxxxxxxxxx".to_string(),
+            date_created: Some(13_295_000_000_000_000),
+            date_last_used: Some(13_335_000_000_000_000),
+            date_modified: None,
+        },
+        TestLoginEntry {
+            url: "https://app.slack.com/signin".to_string(),
+            username: "dev@company.com".to_string(),
+            password: "slack-workspace-pass".to_string(),
+            date_created: Some(13_305_000_000_000_000),
+            date_last_used: Some(13_355_000_000_000_000),
+            date_modified: None,
+        },
+    ];
+
+    create_test_login_db(&profile_dir.join("Login Data"), &entries, &key)?;
+
+    eprintln!("Created mock Chrome profile at: {}", output_dir.display());
+    eprintln!("  {} credentials in Default profile", entries.len());
+    eprintln!("  Encryption key: {key}");
+    eprintln!();
+    eprintln!("Usage:");
+    eprintln!(
+        "  credvault --data-dir {} --encryption-key {} scan",
+        output_dir.display(),
+        key
+    );
+
+    Ok(())
+}
+
 fn parse_expiry(s: &str) -> anyhow::Result<chrono::DateTime<chrono::Utc>> {
     use chrono::{Duration, Utc};
 
-    // Try duration format: "30d", "24h"
     if let Some(days) = s.strip_suffix('d') {
         let d: i64 = days.parse()?;
         return Ok(Utc::now() + Duration::days(d));
@@ -381,19 +521,16 @@ fn parse_expiry(s: &str) -> anyhow::Result<chrono::DateTime<chrono::Utc>> {
         return Ok(Utc::now() + Duration::hours(h));
     }
 
-    // Try ISO 8601 / RFC 3339
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
         return Ok(dt.with_timezone(&Utc));
     }
 
-    // Try date-only format
     if let Ok(date) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        let dt = date
-            .and_hms_opt(23, 59, 59)
-            .unwrap()
-            .and_utc();
+        let dt = date.and_hms_opt(23, 59, 59).unwrap().and_utc();
         return Ok(dt);
     }
 
-    anyhow::bail!("Could not parse expiry: '{s}'. Use formats like '30d', '24h', '2026-04-01', or RFC 3339.")
+    anyhow::bail!(
+        "Could not parse expiry: '{s}'. Use formats like '30d', '24h', '2026-04-01', or RFC 3339."
+    )
 }
