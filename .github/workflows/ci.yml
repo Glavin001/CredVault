@@ -19,6 +19,18 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install frontend dependencies
+        run: npm ci --prefix crates/credvault-gui/src-ui
+      - name: Build frontend
+        run: npm run build --prefix crates/credvault-gui/src-ui
       - name: Format check
         run: cargo fmt --all -- --check
       - name: Clippy
@@ -46,6 +58,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install frontend dependencies
+        run: npm ci --prefix crates/credvault-gui/src-ui
+      - name: Build frontend
+        run: npm run build --prefix crates/credvault-gui/src-ui
       - name: Build
         run: cargo build --workspace --target ${{ matrix.target }}
       - name: Run tests
@@ -103,4 +128,81 @@ jobs:
           path: |
             ${{ matrix.artifact }}.tar.gz
             ${{ matrix.artifact }}.zip
+          if-no-files-found: ignore
+
+  tauri:
+    name: Tauri (${{ matrix.os }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: credvault-gui-linux-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: credvault-gui-macos-aarch64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: credvault-gui-windows-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: tauri-${{ matrix.target }}
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix crates/credvault-gui/src-ui
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2"
+
+      - name: Build Tauri app
+        run: cargo tauri build --target ${{ matrix.target }}
+        working-directory: crates/credvault-gui
+
+      - name: Collect artifacts (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p staging
+          cp target/${{ matrix.target }}/release/bundle/deb/*.deb staging/ 2>/dev/null || true
+          cp target/${{ matrix.target }}/release/bundle/appimage/*.AppImage staging/ 2>/dev/null || true
+          cp target/${{ matrix.target }}/release/bundle/rpm/*.rpm staging/ 2>/dev/null || true
+
+      - name: Collect artifacts (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p staging
+          cp -r target/${{ matrix.target }}/release/bundle/dmg/*.dmg staging/ 2>/dev/null || true
+          cp -r target/${{ matrix.target }}/release/bundle/macos/*.app staging/ 2>/dev/null || true
+
+      - name: Collect artifacts (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path staging
+          Copy-Item "target/${{ matrix.target }}/release/bundle/msi/*.msi" -Destination staging/ -ErrorAction SilentlyContinue
+          Copy-Item "target/${{ matrix.target }}/release/bundle/nsis/*.exe" -Destination staging/ -ErrorAction SilentlyContinue
+
+      - name: Upload Tauri artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: staging/*
           if-no-files-found: ignore
