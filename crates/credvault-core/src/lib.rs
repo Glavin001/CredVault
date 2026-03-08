@@ -33,11 +33,13 @@ pub struct VaultConfig {
 fn get_configured_adapters(config: &VaultConfig) -> Vec<Box<dyn adapter::SourceAdapter>> {
     let mut adapters: Vec<Box<dyn adapter::SourceAdapter>> = Vec::new();
 
-    if let (Some(ref data_dir), Some(ref key)) =
-        (&config.chromium_data_dir, &config.encryption_key)
+    if let (Some(ref data_dir), Some(ref key)) = (&config.chromium_data_dir, &config.encryption_key)
     {
         // Test mode: single adapter with overrides
-        let browser_config = adapter::chromium::chromium_configs().into_iter().next().unwrap();
+        let browser_config = adapter::chromium::chromium_configs()
+            .into_iter()
+            .next()
+            .unwrap();
         let adapter = adapter::chromium::ChromiumAdapter::with_test_overrides(
             browser_config,
             data_dir.clone(),
@@ -47,7 +49,9 @@ fn get_configured_adapters(config: &VaultConfig) -> Vec<Box<dyn adapter::SourceA
     } else {
         // Production mode: all browsers
         for browser_config in adapter::chromium::chromium_configs() {
-            adapters.push(Box::new(adapter::chromium::ChromiumAdapter::new(browser_config)));
+            adapters.push(Box::new(adapter::chromium::ChromiumAdapter::new(
+                browser_config,
+            )));
         }
     }
 
@@ -60,9 +64,7 @@ pub async fn discover_sources() -> Result<Vec<CredentialSource>> {
 }
 
 /// Scan with custom config.
-pub async fn discover_sources_with_config(
-    config: &VaultConfig,
-) -> Result<Vec<CredentialSource>> {
+pub async fn discover_sources_with_config(config: &VaultConfig) -> Result<Vec<CredentialSource>> {
     let adapters = get_configured_adapters(config);
     discovery::scan_with_adapters(&adapters)
 }
@@ -100,10 +102,7 @@ pub async fn extract_credentials_with_config(
 }
 
 /// Create an encrypted bundle from extracted credentials.
-pub fn create_bundle(
-    credentials: &[Credential],
-    options: &BundleOptions,
-) -> Result<Vec<u8>> {
+pub fn create_bundle(credentials: &[Credential], options: &BundleOptions) -> Result<Vec<u8>> {
     bundle::create_bundle(credentials, options)
 }
 

@@ -119,8 +119,13 @@ fn test_full_pipeline_credvault_format() {
     let work_ids: Vec<&str> = entries
         .iter()
         .filter(|e| {
-            ["github.com", "console.aws.amazon.com", "app.vercel.com", "registry.npmjs.org"]
-                .contains(&e.domain.as_str())
+            [
+                "github.com",
+                "console.aws.amazon.com",
+                "app.vercel.com",
+                "registry.npmjs.org",
+            ]
+            .contains(&e.domain.as_str())
         })
         .map(|e| e.id.as_str())
         .collect();
@@ -311,8 +316,7 @@ fn test_filtering_workflow() {
         domains: Some(vec!["github.com".to_string()]),
         ..Default::default()
     };
-    let index =
-        credvault_core::index::list_with_adapters(&adapters, None, Some(&filter)).unwrap();
+    let index = credvault_core::index::list_with_adapters(&adapters, None, Some(&filter)).unwrap();
     assert_eq!(index.entries.len(), 1);
     assert_eq!(index.entries[0].domain, "github.com");
 
@@ -321,8 +325,7 @@ fn test_filtering_workflow() {
         search: Some("company.com".to_string()),
         ..Default::default()
     };
-    let index =
-        credvault_core::index::list_with_adapters(&adapters, None, Some(&filter)).unwrap();
+    let index = credvault_core::index::list_with_adapters(&adapters, None, Some(&filter)).unwrap();
     assert_eq!(index.entries.len(), 2); // admin@company.com and deployer@company.com
 
     // Wildcard domain filter
@@ -330,8 +333,7 @@ fn test_filtering_workflow() {
         domains: Some(vec!["*.amazon.com".to_string()]),
         ..Default::default()
     };
-    let index =
-        credvault_core::index::list_with_adapters(&adapters, None, Some(&filter)).unwrap();
+    let index = credvault_core::index::list_with_adapters(&adapters, None, Some(&filter)).unwrap();
     assert_eq!(index.entries.len(), 1);
     assert_eq!(index.entries[0].domain, "console.aws.amazon.com");
 }
@@ -403,8 +405,7 @@ fn test_credential_deduplication() {
     );
 
     let adapters: Vec<Box<dyn SourceAdapter>> = vec![Box::new(chrome), Box::new(brave)];
-    let index =
-        credvault_core::index::list_with_adapters(&adapters, None, None).unwrap();
+    let index = credvault_core::index::list_with_adapters(&adapters, None, None).unwrap();
 
     // Should find both entries
     assert_eq!(index.entries.len(), 2);
@@ -412,10 +413,7 @@ fn test_credential_deduplication() {
     // Should detect them as duplicates (same domain + username)
     assert_eq!(index.duplicates.len(), 1);
     assert_eq!(index.duplicates[0].domain, "github.com");
-    assert_eq!(
-        index.duplicates[0].username.as_deref(),
-        Some("developer")
-    );
+    assert_eq!(index.duplicates[0].username.as_deref(), Some("developer"));
     assert_eq!(index.duplicates[0].entry_ids.len(), 2);
 }
 

@@ -22,9 +22,7 @@ pub fn decrypt_chromium_password(encrypted: &[u8], raw_key: &str) -> Result<Stri
 
     // Check for v10/v11 prefix (macOS/Linux)
     if encrypted.len() < 4 {
-        return Err(Error::Decryption(
-            "Encrypted blob too short".to_string(),
-        ));
+        return Err(Error::Decryption("Encrypted blob too short".to_string()));
     }
 
     let version_prefix = &encrypted[..3];
@@ -40,12 +38,7 @@ pub fn decrypt_chromium_password(encrypted: &[u8], raw_key: &str) -> Result<Stri
 
     // Derive the AES key using PBKDF2-SHA1
     let mut derived_key = [0u8; 16];
-    pbkdf2::pbkdf2_hmac::<sha1::Sha1>(
-        raw_key.as_bytes(),
-        b"saltysalt",
-        1003,
-        &mut derived_key,
-    );
+    pbkdf2::pbkdf2_hmac::<sha1::Sha1>(raw_key.as_bytes(), b"saltysalt", 1003, &mut derived_key);
 
     // Decrypt AES-128-CBC with IV = 16 bytes of 0x20
     let iv = [0x20u8; 16];
@@ -76,12 +69,7 @@ pub fn encrypt_chromium_password(plaintext: &str, raw_key: &str) -> Vec<u8> {
 
     // Derive key
     let mut derived_key = [0u8; 16];
-    pbkdf2::pbkdf2_hmac::<sha1::Sha1>(
-        raw_key.as_bytes(),
-        b"saltysalt",
-        1003,
-        &mut derived_key,
-    );
+    pbkdf2::pbkdf2_hmac::<sha1::Sha1>(raw_key.as_bytes(), b"saltysalt", 1003, &mut derived_key);
 
     let iv = [0x20u8; 16];
     let encryptor = Aes128CbcEnc::new(&derived_key.into(), &iv.into());

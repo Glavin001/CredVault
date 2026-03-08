@@ -14,11 +14,8 @@ pub trait SourceAdapter: Send + Sync {
     fn list_credentials(&self, profile: &Profile) -> Result<Vec<CredentialEntry>>;
 
     /// Extract credentials with their secret values.
-    fn extract_credentials(
-        &self,
-        profile: &Profile,
-        entry_ids: &[&str],
-    ) -> Result<Vec<Credential>>;
+    fn extract_credentials(&self, profile: &Profile, entry_ids: &[&str])
+        -> Result<Vec<Credential>>;
 
     /// What authentication is required to access this source.
     fn auth_requirement(&self) -> AuthRequirement;

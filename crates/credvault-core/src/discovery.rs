@@ -27,9 +27,7 @@ pub async fn scan_sources() -> Result<Vec<CredentialSource>> {
 }
 
 /// Scan using a specific set of adapters (for testing).
-pub fn scan_with_adapters(
-    adapters: &[Box<dyn SourceAdapter>],
-) -> Result<Vec<CredentialSource>> {
+pub fn scan_with_adapters(adapters: &[Box<dyn SourceAdapter>]) -> Result<Vec<CredentialSource>> {
     let mut sources = Vec::new();
 
     for adapter in adapters {

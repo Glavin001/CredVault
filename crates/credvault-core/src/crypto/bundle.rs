@@ -129,7 +129,10 @@ mod tests {
 
     #[test]
     fn test_invalid_magic() {
-        let result = decrypt_bundle(b"NOTCVLTxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", &SecretString::from("pw"));
+        let result = decrypt_bundle(
+            b"NOTCVLTxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            &SecretString::from("pw"),
+        );
         assert!(matches!(result, Err(Error::InvalidBundle(_))));
     }
 

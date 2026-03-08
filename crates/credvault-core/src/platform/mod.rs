@@ -24,21 +24,17 @@ pub fn expand_home(path: &str) -> Option<PathBuf> {
 /// Get the user's home directory.
 pub fn home_dir() -> Option<PathBuf> {
     // Try HOME env var first (works on all Unix-likes)
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .or_else(|| {
-            // Fallback for Windows
-            std::env::var_os("USERPROFILE").map(PathBuf::from)
-        })
+    std::env::var_os("HOME").map(PathBuf::from).or_else(|| {
+        // Fallback for Windows
+        std::env::var_os("USERPROFILE").map(PathBuf::from)
+    })
 }
 
 /// Get the platform-specific Chromium data directory base.
 pub fn chromium_base_dir(browser_subpath: &str) -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        expand_home(&format!(
-            "~/Library/Application Support/{browser_subpath}"
-        ))
+        expand_home(&format!("~/Library/Application Support/{browser_subpath}"))
     }
 
     #[cfg(target_os = "linux")]
@@ -48,8 +44,7 @@ pub fn chromium_base_dir(browser_subpath: &str) -> Option<PathBuf> {
 
     #[cfg(target_os = "windows")]
     {
-        std::env::var_os("LOCALAPPDATA")
-            .map(|d| PathBuf::from(d).join(browser_subpath))
+        std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join(browser_subpath))
     }
 }
 
@@ -67,7 +62,6 @@ pub fn firefox_base_dir() -> Option<PathBuf> {
 
     #[cfg(target_os = "windows")]
     {
-        std::env::var_os("APPDATA")
-            .map(|d| PathBuf::from(d).join("Mozilla").join("Firefox"))
+        std::env::var_os("APPDATA").map(|d| PathBuf::from(d).join("Mozilla").join("Firefox"))
     }
 }

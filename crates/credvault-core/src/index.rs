@@ -177,10 +177,7 @@ fn find_duplicates(entries: &[CredentialEntry]) -> Vec<DuplicateGroup> {
 
     for entry in entries {
         let key = (entry.domain.clone(), entry.username.clone());
-        groups
-            .entry(key)
-            .or_default()
-            .push(entry.id.clone());
+        groups.entry(key).or_default().push(entry.id.clone());
     }
 
     groups
