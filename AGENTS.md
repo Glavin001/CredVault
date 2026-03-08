@@ -26,6 +26,7 @@ cargo build --workspace
 | CLI integration tests | `bash tests/cli_integration.sh` |
 | Build workspace | `cargo build --workspace` |
 | Run CLI with debug logs | `RUST_LOG=credvault=debug cargo run -- scan` |
+| Run GUI (dev mode) | Start Vite first: `npm run dev --prefix crates/credvault-gui/src-ui`, then `cargo tauri dev --no-watch` from `crates/credvault-gui/` |
 
 ### Caveats
 
@@ -34,3 +35,5 @@ cargo build --workspace
 - The CLI's `test-setup` subcommand creates a mock Chrome profile with 8 test credentials, useful for exercising the full pipeline without real browser data.
 - SQLite is bundled via the `rusqlite` `bundled` feature — no system SQLite install is needed.
 - No external services, databases, or Docker containers are required.
+- For `cargo tauri dev`, the Vite dev server must be started **separately first** on port 1420 because `beforeDevCommand` in `tauri.conf.json` is empty. Start Vite with `npm run dev --prefix crates/credvault-gui/src-ui` in one terminal, then `cargo tauri dev --no-watch` from `crates/credvault-gui/` in another.
+- `cargo install tauri-cli --version "^2"` is needed for `cargo tauri` commands; it is not in the update script because it takes ~3 minutes to compile and is only needed for GUI work.
