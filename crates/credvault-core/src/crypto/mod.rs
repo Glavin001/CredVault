@@ -2,3 +2,4 @@
 
 pub mod bundle;
 pub mod chromium;
+pub mod firefox;

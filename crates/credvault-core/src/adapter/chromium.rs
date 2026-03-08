@@ -5,7 +5,9 @@
 //! - Encrypted with platform-specific keys
 
 use crate::adapter::{DetectedSource, SourceAdapter};
-use crate::crypto::chromium::{decrypt_chromium_password, encrypt_chromium_password};
+use crate::crypto::chromium::{
+    decrypt_chromium_password, decrypt_chromium_password_windows, encrypt_chromium_password,
+};
 use crate::platform;
 use crate::types::*;
 use crate::{Error, Result};
@@ -68,6 +70,14 @@ pub fn chromium_configs() -> Vec<ChromiumConfig> {
             linux_subpath: "opera",
             windows_subpath: "Opera Software\\Opera Stable",
             keychain_service: "Opera Safe Storage",
+        },
+        ChromiumConfig {
+            browser: BrowserKind::Arc,
+            name: "Arc",
+            macos_subpath: "Arc/User Data",
+            linux_subpath: "arc/User Data",
+            windows_subpath: "Arc\\User Data",
+            keychain_service: "Arc Safe Storage",
         },
     ]
 }
@@ -181,9 +191,20 @@ impl ChromiumAdapter {
 
         #[cfg(target_os = "windows")]
         {
-            Err(Error::PlatformNotSupported(
-                "Windows Chromium decryption not yet implemented".to_string(),
-            ))
+            let base_dir = self.base_dir().ok_or_else(|| {
+                Error::SourceNotFound("Cannot determine browser data directory".to_string())
+            })?;
+            let local_state = base_dir.join("Local State");
+            platform::windows::get_chromium_encryption_key(&local_state)
+        }
+    }
+
+    /// Decrypt a password blob using the platform-appropriate method.
+    fn decrypt_password(blob: &[u8], encryption_key: &str) -> Result<String> {
+        if cfg!(target_os = "windows") {
+            decrypt_chromium_password_windows(blob, encryption_key)
+        } else {
+            decrypt_chromium_password(blob, encryption_key)
         }
     }
 
@@ -314,7 +335,7 @@ impl ChromiumAdapter {
                 }
             }
 
-            let password = match decrypt_chromium_password(&password_blob, encryption_key) {
+            let password = match Self::decrypt_password(&password_blob, encryption_key) {
                 Ok(p) => p,
                 Err(e) => {
                     tracing::warn!("Failed to decrypt password for {url}: {e}");
@@ -347,6 +368,163 @@ impl ChromiumAdapter {
 
         Ok(credentials)
     }
+
+    /// Open a copy of the Web Data SQLite database (credit cards).
+    fn open_webdata_db(&self, profile_path: &Path) -> Result<Connection> {
+        let web_data = profile_path.join("Web Data");
+        if !web_data.exists() {
+            return Err(Error::SourceNotFound(format!(
+                "Web Data not found at {}",
+                web_data.display()
+            )));
+        }
+
+        let temp_dir = std::env::temp_dir();
+        let temp_db = temp_dir.join(format!("credvault_web_data_{}.db", uuid::Uuid::new_v4()));
+        std::fs::copy(&web_data, &temp_db)?;
+
+        let conn = Connection::open(&temp_db)?;
+        let _ = std::fs::remove_file(&temp_db);
+        Ok(conn)
+    }
+
+    /// Read credit card entries from the Web Data database (metadata only).
+    fn read_cc_entries_from_db(
+        &self,
+        conn: &Connection,
+        source_id: &str,
+    ) -> Result<Vec<CredentialEntry>> {
+        let mut stmt = conn.prepare(
+            "SELECT name_on_card, expiration_month, expiration_year, date_modified, nickname, guid
+             FROM credit_cards
+             ORDER BY name_on_card",
+        )?;
+
+        let entries = stmt
+            .query_map([], |row| {
+                let name: String = row.get(0)?;
+                let exp_month: i32 = row.get(1)?;
+                let exp_year: i32 = row.get(2)?;
+                let modified: Option<i64> = row.get(3)?;
+                let nickname: Option<String> = row.get(4)?;
+                let guid: String = row.get(5)?;
+                Ok((name, exp_month, exp_year, modified, nickname, guid))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(entries
+            .into_iter()
+            .enumerate()
+            .map(
+                |(i, (name, exp_month, exp_year, modified, nickname, _guid))| {
+                    let entry_id = format!("{source_id}:cc:{i:04}");
+                    let label = if exp_year > 0 {
+                        Some(format!(
+                            "{}Exp: {exp_month:02}/{exp_year}",
+                            nickname
+                                .as_ref()
+                                .map_or(String::new(), |n| format!("{n} — "))
+                        ))
+                    } else {
+                        nickname
+                    };
+
+                    CredentialEntry {
+                        id: entry_id,
+                        source_id: source_id.to_string(),
+                        credential_type: CredentialType::CreditCard,
+                        domain: "autofill.credit-cards".to_string(),
+                        url: None,
+                        username: if name.is_empty() { None } else { Some(name) },
+                        label,
+                        created: None,
+                        last_used: None,
+                        modified: chrome_timestamp_to_datetime(modified),
+                    }
+                },
+            )
+            .collect())
+    }
+
+    /// Read and decrypt credit card numbers from the Web Data database.
+    fn read_cc_credentials_from_db(
+        &self,
+        conn: &Connection,
+        source_id: &str,
+        entry_ids: Option<&[&str]>,
+        encryption_key: &str,
+    ) -> Result<Vec<Credential>> {
+        let mut stmt = conn.prepare(
+            "SELECT name_on_card, expiration_month, expiration_year, card_number_encrypted,
+                    date_modified, nickname, guid
+             FROM credit_cards
+             ORDER BY name_on_card",
+        )?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let name: String = row.get(0)?;
+                let exp_month: i32 = row.get(1)?;
+                let exp_year: i32 = row.get(2)?;
+                let card_blob: Vec<u8> = row.get(3)?;
+                let modified: Option<i64> = row.get(4)?;
+                let nickname: Option<String> = row.get(5)?;
+                let _guid: String = row.get(6)?;
+                Ok((name, exp_month, exp_year, card_blob, modified, nickname))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        let mut credentials = Vec::new();
+
+        for (i, (name, exp_month, exp_year, card_blob, modified, nickname)) in
+            rows.into_iter().enumerate()
+        {
+            let entry_id = format!("{source_id}:cc:{i:04}");
+
+            if let Some(ids) = entry_ids {
+                if !ids.contains(&entry_id.as_str()) {
+                    continue;
+                }
+            }
+
+            let card_number = match Self::decrypt_password(&card_blob, encryption_key) {
+                Ok(n) => n,
+                Err(e) => {
+                    tracing::warn!("Failed to decrypt credit card: {e}");
+                    continue;
+                }
+            };
+
+            let label = if exp_year > 0 {
+                Some(format!(
+                    "{}Exp: {exp_month:02}/{exp_year}",
+                    nickname
+                        .as_ref()
+                        .map_or(String::new(), |n| format!("{n} — "))
+                ))
+            } else {
+                nickname
+            };
+
+            credentials.push(Credential {
+                entry: CredentialEntry {
+                    id: entry_id,
+                    source_id: source_id.to_string(),
+                    credential_type: CredentialType::CreditCard,
+                    domain: "autofill.credit-cards".to_string(),
+                    url: None,
+                    username: if name.is_empty() { None } else { Some(name) },
+                    label,
+                    created: None,
+                    last_used: None,
+                    modified: chrome_timestamp_to_datetime(modified),
+                },
+                secret: SecretString::from(card_number),
+            });
+        }
+
+        Ok(credentials)
+    }
 }
 
 impl SourceAdapter for ChromiumAdapter {
@@ -361,12 +539,19 @@ impl SourceAdapter for ChromiumAdapter {
             return Ok(vec![]);
         }
 
-        // Count credentials across all profiles
+        // Count credentials across all profiles (passwords + credit cards)
         let mut total_count = 0u32;
         for profile in &profiles {
             let profile_path = Path::new(&profile.path);
             if let Ok(conn) = self.open_login_db(profile_path) {
                 if let Ok(count) = conn.query_row("SELECT COUNT(*) FROM logins", [], |row| {
+                    row.get::<_, u32>(0)
+                }) {
+                    total_count += count;
+                }
+            }
+            if let Ok(conn) = self.open_webdata_db(profile_path) {
+                if let Ok(count) = conn.query_row("SELECT COUNT(*) FROM credit_cards", [], |row| {
                     row.get::<_, u32>(0)
                 }) {
                     total_count += count;
@@ -405,15 +590,27 @@ impl SourceAdapter for ChromiumAdapter {
 
     fn list_credentials(&self, profile: &Profile) -> Result<Vec<CredentialEntry>> {
         let profile_path = Path::new(&profile.path);
-        let conn = self.open_login_db(profile_path)?;
-
         let source_id = format!(
             "{}-{}",
             self.config.name.to_lowercase(),
             profile.id.to_lowercase().replace(' ', "-")
         );
 
-        self.read_entries_from_db(&conn, &source_id)
+        let mut entries = Vec::new();
+
+        // Passwords from Login Data
+        if let Ok(conn) = self.open_login_db(profile_path) {
+            entries.extend(self.read_entries_from_db(&conn, &source_id)?);
+        }
+
+        // Credit cards from Web Data
+        if let Ok(conn) = self.open_webdata_db(profile_path) {
+            if let Ok(cc_entries) = self.read_cc_entries_from_db(&conn, &source_id) {
+                entries.extend(cc_entries);
+            }
+        }
+
+        Ok(entries)
     }
 
     fn extract_credentials(
@@ -422,7 +619,6 @@ impl SourceAdapter for ChromiumAdapter {
         entry_ids: &[&str],
     ) -> Result<Vec<Credential>> {
         let profile_path = Path::new(&profile.path);
-        let conn = self.open_login_db(profile_path)?;
         let encryption_key = self.get_encryption_key()?;
 
         let source_id = format!(
@@ -431,16 +627,34 @@ impl SourceAdapter for ChromiumAdapter {
             profile.id.to_lowercase().replace(' ', "-")
         );
 
-        self.read_credentials_from_db(
-            &conn,
-            &source_id,
-            if entry_ids.is_empty() {
-                None
-            } else {
-                Some(entry_ids)
-            },
-            &encryption_key,
-        )
+        let ids = if entry_ids.is_empty() {
+            None
+        } else {
+            Some(entry_ids)
+        };
+
+        let mut credentials = Vec::new();
+
+        // Passwords from Login Data
+        if let Ok(conn) = self.open_login_db(profile_path) {
+            credentials.extend(self.read_credentials_from_db(
+                &conn,
+                &source_id,
+                ids,
+                &encryption_key,
+            )?);
+        }
+
+        // Credit cards from Web Data
+        if let Ok(conn) = self.open_webdata_db(profile_path) {
+            if let Ok(cc) =
+                self.read_cc_credentials_from_db(&conn, &source_id, ids, &encryption_key)
+            {
+                credentials.extend(cc);
+            }
+        }
+
+        Ok(credentials)
     }
 
     fn auth_requirement(&self) -> AuthRequirement {
@@ -585,6 +799,58 @@ pub struct TestLoginEntry {
     pub date_created: Option<i64>,
     pub date_last_used: Option<i64>,
     pub date_modified: Option<i64>,
+}
+
+/// A test credit card entry for creating mock databases.
+#[derive(Debug, Clone)]
+pub struct TestCreditCardEntry {
+    pub name_on_card: String,
+    pub card_number: String,
+    pub expiration_month: i32,
+    pub expiration_year: i32,
+}
+
+/// Create a mock Chrome Web Data SQLite database for testing (credit cards).
+pub fn create_test_webdata_db(
+    path: &Path,
+    entries: &[TestCreditCardEntry],
+    encryption_key: &str,
+) -> Result<()> {
+    let conn = Connection::open(path)?;
+
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS credit_cards (
+            guid VARCHAR PRIMARY KEY,
+            name_on_card VARCHAR,
+            expiration_month INTEGER DEFAULT 0,
+            expiration_year INTEGER DEFAULT 0,
+            card_number_encrypted BLOB,
+            date_modified INTEGER NOT NULL DEFAULT 0,
+            origin VARCHAR DEFAULT '',
+            use_count INTEGER NOT NULL DEFAULT 0,
+            use_date INTEGER NOT NULL DEFAULT 0,
+            billing_address_id VARCHAR,
+            nickname VARCHAR
+        );",
+    )?;
+
+    let mut stmt = conn.prepare(
+        "INSERT INTO credit_cards (guid, name_on_card, expiration_month, expiration_year, card_number_encrypted)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+    )?;
+
+    for (i, entry) in entries.iter().enumerate() {
+        let encrypted = encrypt_chromium_password(&entry.card_number, encryption_key);
+        stmt.execute(rusqlite::params![
+            format!("guid-{i:04}"),
+            entry.name_on_card,
+            entry.expiration_month,
+            entry.expiration_year,
+            encrypted,
+        ])?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -847,6 +1113,82 @@ mod tests {
         let sources = adapter.detect().unwrap();
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].source.profiles.len(), 2);
+        assert_eq!(sources[0].source.credential_count, Some(2));
+    }
+
+    #[test]
+    fn test_credit_card_list_and_extract() {
+        let temp = TempDir::new().unwrap();
+        let encryption_key = "cc-test-key";
+        let profile_dir = temp.path().join("Default");
+        std::fs::create_dir_all(&profile_dir).unwrap();
+
+        // Create Login Data (required for profile detection)
+        create_test_login_db(&profile_dir.join("Login Data"), &[], encryption_key).unwrap();
+
+        // Create Web Data with credit cards
+        create_test_webdata_db(
+            &profile_dir.join("Web Data"),
+            &[
+                TestCreditCardEntry {
+                    name_on_card: "John Doe".to_string(),
+                    card_number: "4111111111111111".to_string(),
+                    expiration_month: 12,
+                    expiration_year: 2028,
+                },
+                TestCreditCardEntry {
+                    name_on_card: "Jane Smith".to_string(),
+                    card_number: "5500000000000004".to_string(),
+                    expiration_month: 6,
+                    expiration_year: 2027,
+                },
+            ],
+            encryption_key,
+        )
+        .unwrap();
+
+        let config = ChromiumConfig {
+            browser: BrowserKind::Chrome,
+            name: "Chrome",
+            macos_subpath: "",
+            linux_subpath: "",
+            windows_subpath: "",
+            keychain_service: "",
+        };
+        let adapter = ChromiumAdapter::with_test_overrides(
+            config,
+            temp.path().to_path_buf(),
+            encryption_key.to_string(),
+        );
+
+        let profile = Profile {
+            id: "Default".to_string(),
+            name: "Default".to_string(),
+            path: profile_dir.to_string_lossy().to_string(),
+        };
+
+        // List should include credit cards
+        let entries = adapter.list_credentials(&profile).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert!(entries
+            .iter()
+            .all(|e| e.credential_type == CredentialType::CreditCard));
+        assert_eq!(entries[0].username.as_deref(), Some("Jane Smith")); // alphabetical order
+
+        // Extract should decrypt card numbers
+        let creds = adapter.extract_credentials(&profile, &[]).unwrap();
+        assert_eq!(creds.len(), 2);
+
+        use secrecy::ExposeSecret;
+        let john = creds
+            .iter()
+            .find(|c| c.entry.username.as_deref() == Some("John Doe"))
+            .unwrap();
+        assert_eq!(john.secret.expose_secret(), "4111111111111111");
+        assert_eq!(john.entry.credential_type, CredentialType::CreditCard);
+
+        // Detect should count credit cards
+        let sources = adapter.detect().unwrap();
         assert_eq!(sources[0].source.credential_count, Some(2));
     }
 }

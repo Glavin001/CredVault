@@ -26,7 +26,9 @@ cbc = "0.1"
 pbkdf2 = "0.12"
 argon2 = "0.5"
 sha1 = "0.10"
+sha2 = "0.10"
 hmac = "0.12"
+des = "0.8"
 secrecy = { version = "0.10", features = ["serde"] }
 zeroize = "1"
 

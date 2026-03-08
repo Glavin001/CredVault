@@ -100,6 +100,7 @@ pub struct Profile {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CredentialType {
     Password,
+    CreditCard,
     Cookie,
     ApiKey,
     Certificate,

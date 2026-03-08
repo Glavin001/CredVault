@@ -20,7 +20,9 @@ cbc = { workspace = true }
 pbkdf2 = { workspace = true }
 argon2 = { workspace = true }
 sha1 = { workspace = true }
+sha2 = { workspace = true }
 hmac = { workspace = true }
+des = { workspace = true }
 secrecy = { workspace = true }
 zeroize = { workspace = true }
 
@@ -30,6 +32,9 @@ rmp-serde = { workspace = true }
 csv = { workspace = true }
 base64 = { workspace = true }
 rand = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

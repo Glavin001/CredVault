@@ -1,6 +1,7 @@
 //! Source adapters for different credential stores.
 
 pub mod chromium;
+pub mod firefox;
 
 use crate::types::*;
 use crate::Result;
@@ -41,6 +42,9 @@ pub fn get_adapters() -> Vec<Box<dyn SourceAdapter>> {
     for config in chromium::chromium_configs() {
         adapters.push(Box::new(chromium::ChromiumAdapter::new(config)));
     }
+
+    // Firefox
+    adapters.push(Box::new(firefox::FirefoxAdapter::new()));
 
     adapters
 }

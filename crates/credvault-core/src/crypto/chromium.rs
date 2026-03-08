@@ -87,6 +87,87 @@ pub fn encrypt_chromium_password(plaintext: &str, raw_key: &str) -> Vec<u8> {
     result
 }
 
+/// Decrypt a Chromium password blob on Windows (v80+).
+///
+/// Format: "v10" (3 bytes) + nonce (12 bytes) + AES-256-GCM ciphertext+tag
+///
+/// The `raw_key_b64` is a base64-encoded 32-byte AES key (from DPAPI decryption).
+pub fn decrypt_chromium_password_windows(encrypted: &[u8], raw_key_b64: &str) -> Result<String> {
+    use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce};
+    use base64::Engine;
+
+    if encrypted.is_empty() {
+        return Ok(String::new());
+    }
+
+    // v10 prefix (3) + nonce (12) + at least 1 byte ciphertext + tag (16)
+    if encrypted.len() < 3 + 12 + 16 {
+        return Err(Error::Decryption(
+            "Windows encrypted blob too short".to_string(),
+        ));
+    }
+
+    let prefix = &encrypted[..3];
+    if prefix != b"v10" {
+        return Err(Error::Decryption(format!(
+            "Expected v10 prefix, got: {:?}",
+            prefix
+        )));
+    }
+
+    let raw_key = base64::engine::general_purpose::STANDARD
+        .decode(raw_key_b64)
+        .map_err(|e| Error::Decryption(format!("Invalid base64 key: {e}")))?;
+
+    if raw_key.len() != 32 {
+        return Err(Error::Decryption(format!(
+            "Expected 32-byte AES key, got {} bytes",
+            raw_key.len()
+        )));
+    }
+
+    let nonce_bytes = &encrypted[3..15];
+    let ciphertext_with_tag = &encrypted[15..];
+
+    let cipher = Aes256Gcm::new_from_slice(&raw_key)
+        .map_err(|e| Error::Decryption(format!("AES-256-GCM key init failed: {e}")))?;
+
+    let nonce = Nonce::from_slice(nonce_bytes);
+
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext_with_tag)
+        .map_err(|e| Error::Decryption(format!("AES-256-GCM decryption failed: {e}")))?;
+
+    String::from_utf8(plaintext)
+        .map_err(|e| Error::Decryption(format!("Decrypted password is not valid UTF-8: {e}")))
+}
+
+/// Create a test-encrypted password blob in Windows format (AES-256-GCM).
+pub fn encrypt_chromium_password_windows(plaintext: &str, raw_key_b64: &str) -> Vec<u8> {
+    use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce};
+    use base64::Engine;
+
+    let raw_key = base64::engine::general_purpose::STANDARD
+        .decode(raw_key_b64)
+        .expect("invalid base64 key");
+
+    let cipher = Aes256Gcm::new_from_slice(&raw_key).expect("key init failed");
+
+    // Use a fixed nonce for testing determinism
+    let nonce_bytes = [0x01u8; 12];
+    let nonce = Nonce::from_slice(&nonce_bytes);
+
+    let ciphertext_with_tag = cipher
+        .encrypt(nonce, plaintext.as_bytes())
+        .expect("encryption failed");
+
+    let mut result = Vec::with_capacity(3 + 12 + ciphertext_with_tag.len());
+    result.extend_from_slice(b"v10");
+    result.extend_from_slice(&nonce_bytes);
+    result.extend_from_slice(&ciphertext_with_tag);
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,5 +230,43 @@ mod tests {
         let encrypted = encrypt_chromium_password(password, key);
         let decrypted = decrypt_chromium_password(&encrypted, key).unwrap();
         assert_eq!(decrypted, password);
+    }
+
+    #[test]
+    fn test_windows_aes256gcm_roundtrip() {
+        use base64::Engine;
+        // Generate a 32-byte key and base64-encode it
+        let raw_key = [0xABu8; 32];
+        let key_b64 = base64::engine::general_purpose::STANDARD.encode(raw_key);
+
+        let password = "windows-secret-password!";
+        let encrypted = encrypt_chromium_password_windows(password, &key_b64);
+        let decrypted = decrypt_chromium_password_windows(&encrypted, &key_b64).unwrap();
+        assert_eq!(decrypted, password);
+    }
+
+    #[test]
+    fn test_windows_aes256gcm_various_lengths() {
+        use base64::Engine;
+        let raw_key = [0x42u8; 32];
+        let key_b64 = base64::engine::general_purpose::STANDARD.encode(raw_key);
+
+        let passwords = ["", "a", "medium-length-pw", "unicode: café 日本語"];
+        for password in &passwords {
+            let encrypted = encrypt_chromium_password_windows(password, &key_b64);
+            let decrypted = decrypt_chromium_password_windows(&encrypted, &key_b64).unwrap();
+            assert_eq!(&decrypted, password, "Roundtrip failed for: {password}");
+        }
+    }
+
+    #[test]
+    fn test_windows_wrong_key_fails() {
+        use base64::Engine;
+        let key1 = base64::engine::general_purpose::STANDARD.encode([0xAAu8; 32]);
+        let key2 = base64::engine::general_purpose::STANDARD.encode([0xBBu8; 32]);
+
+        let encrypted = encrypt_chromium_password_windows("secret", &key1);
+        let result = decrypt_chromium_password_windows(&encrypted, &key2);
+        assert!(result.is_err());
     }
 }
