@@ -715,6 +715,18 @@ fn chrome_timestamp_to_datetime(timestamp: Option<i64>) -> Option<chrono::DateTi
 // Test utilities for creating mock Chrome databases
 // ============================================================
 
+/// Returns a test encryption key appropriate for the current platform.
+/// On Windows, this is a base64-encoded 32-byte key (for AES-256-GCM).
+/// On macOS/Linux, this is a plain string (for PBKDF2 key derivation).
+pub fn test_encryption_key() -> &'static str {
+    if cfg!(target_os = "windows") {
+        // base64 of 32 zero bytes — valid AES-256 key for testing
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    } else {
+        "test-key-for-unit-tests"
+    }
+}
+
 /// Encrypt a password using the platform-appropriate method (matching `decrypt_password`).
 fn encrypt_test_password(plaintext: &str, encryption_key: &str) -> Vec<u8> {
     if cfg!(target_os = "windows") {
@@ -874,18 +886,6 @@ pub fn create_test_webdata_db(
 mod tests {
     use super::*;
     use tempfile::TempDir;
-
-    /// Returns a test encryption key appropriate for the current platform.
-    /// On Windows, this is a base64-encoded 32-byte key (for AES-256-GCM).
-    /// On macOS/Linux, this is a plain string (for PBKDF2 key derivation).
-    fn test_encryption_key() -> &'static str {
-        if cfg!(target_os = "windows") {
-            // base64 of 32 zero bytes — valid AES-256 key for testing
-            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-        } else {
-            "test-key-for-unit-tests"
-        }
-    }
 
     fn create_test_adapter(
         temp_dir: &TempDir,

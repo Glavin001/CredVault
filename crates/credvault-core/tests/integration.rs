@@ -5,7 +5,7 @@
 //! real credential extraction without needing actual browser installs.
 
 use credvault_core::adapter::chromium::{
-    create_test_login_db, ChromiumAdapter, ChromiumConfig, TestLoginEntry,
+    create_test_login_db, test_encryption_key, ChromiumAdapter, ChromiumConfig, TestLoginEntry,
 };
 use credvault_core::adapter::SourceAdapter;
 use credvault_core::*;
@@ -15,7 +15,7 @@ use tempfile::TempDir;
 /// Helper: create a mock Chrome setup with test credentials.
 fn setup_mock_chrome(entries: &[TestLoginEntry]) -> (TempDir, ChromiumAdapter) {
     let temp = TempDir::new().unwrap();
-    let encryption_key = "integration-test-key";
+    let encryption_key = test_encryption_key();
     let profile_dir = temp.path().join("Default");
     std::fs::create_dir_all(&profile_dir).unwrap();
 
@@ -343,7 +343,7 @@ fn test_credential_deduplication() {
     // Create two "browsers" with overlapping credentials
     let temp1 = TempDir::new().unwrap();
     let temp2 = TempDir::new().unwrap();
-    let key = "dedup-test-key";
+    let key = test_encryption_key();
 
     let shared_entries = vec![TestLoginEntry {
         url: "https://github.com/login".to_string(),

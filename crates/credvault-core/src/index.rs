@@ -195,7 +195,7 @@ fn find_duplicates(entries: &[CredentialEntry]) -> Vec<DuplicateGroup> {
 mod tests {
     use super::*;
     use crate::adapter::chromium::{
-        create_test_login_db, ChromiumAdapter, ChromiumConfig, TestLoginEntry,
+        create_test_login_db, test_encryption_key, ChromiumAdapter, ChromiumConfig, TestLoginEntry,
     };
     use tempfile::TempDir;
 
@@ -203,7 +203,7 @@ mod tests {
         temp: &TempDir,
         entries: &[TestLoginEntry],
     ) -> Vec<Box<dyn SourceAdapter>> {
-        let encryption_key = "test-key";
+        let encryption_key = test_encryption_key();
         let profile_dir = temp.path().join("Default");
         std::fs::create_dir_all(&profile_dir).unwrap();
         create_test_login_db(&profile_dir.join("Login Data"), entries, encryption_key).unwrap();
