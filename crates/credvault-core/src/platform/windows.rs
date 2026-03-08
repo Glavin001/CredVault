@@ -78,7 +78,7 @@ fn dpapi_decrypt(encrypted: &[u8]) -> Result<Vec<u8>> {
         let decrypted = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
 
         // Free the DPAPI-allocated buffer
-        windows::Win32::Foundation::LocalFree(output.pbData as _);
+        windows::Win32::Foundation::LocalFree(windows::Win32::Foundation::HLOCAL(output.pbData as _));
 
         Ok(decrypted)
     }
