@@ -170,6 +170,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --prefix crates/credvault-gui/src-ui
 
+      - name: Build frontend
+        run: npm run build --prefix crates/credvault-gui/src-ui
+
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2"
 
