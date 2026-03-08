@@ -4,10 +4,14 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum CredVaultError {
+    #[error("no sources were configured")]
+    NoSourcesConfigured,
     #[error("fixture directory does not exist: {0}")]
     FixtureDirectoryMissing(PathBuf),
     #[error("fixture file is invalid: {0}")]
     FixtureFileInvalid(PathBuf),
+    #[error("export file is invalid: {0}")]
+    ExportFileInvalid(PathBuf),
     #[error("source not found: {0}")]
     SourceNotFound(String),
     #[error("credential not found: {0}")]

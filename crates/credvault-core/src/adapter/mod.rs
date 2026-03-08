@@ -6,6 +6,7 @@ use crate::{
 };
 
 pub mod fixture;
+pub mod import;
 
 pub trait SourceAdapter: Send + Sync {
     fn source(&self) -> &CredentialSource;

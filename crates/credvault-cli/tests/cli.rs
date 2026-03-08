@@ -8,10 +8,16 @@ fn fixture_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures")
 }
 
+fn export_fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/exports")
+        .join(name)
+}
+
 #[test]
 fn scan_lists_fixture_sources() {
     Command::new(assert_cmd::cargo::cargo_bin!("credvault"))
-        .arg("--fixtures")
+        .arg("--fixture-dir")
         .arg(fixture_dir())
         .arg("scan")
         .assert()
@@ -29,7 +35,7 @@ fn export_and_read_round_trip_bundle() {
     let bundle_path = std::env::temp_dir().join(format!("credvault-cli-{unique_suffix}.credvault"));
 
     Command::new(assert_cmd::cargo::cargo_bin!("credvault"))
-        .arg("--fixtures")
+        .arg("--fixture-dir")
         .arg(fixture_dir())
         .arg("export")
         .arg("--id")
@@ -45,7 +51,7 @@ fn export_and_read_round_trip_bundle() {
         .stdout(contains("Exported 1 credentials"));
 
     Command::new(assert_cmd::cargo::cargo_bin!("credvault"))
-        .arg("--fixtures")
+        .arg("--fixture-dir")
         .arg(fixture_dir())
         .arg("read")
         .arg(&bundle_path)
@@ -57,4 +63,21 @@ fn export_and_read_round_trip_bundle() {
         .stdout(contains("github.com"));
 
     let _ = std::fs::remove_file(bundle_path);
+}
+
+#[test]
+fn list_real_export_files_and_filter_results() {
+    Command::new(assert_cmd::cargo::cargo_bin!("credvault"))
+        .arg("--chrome-csv")
+        .arg(export_fixture("chrome-passwords.csv"))
+        .arg("--bitwarden-json")
+        .arg(export_fixture("bitwarden-export.json"))
+        .arg("list")
+        .arg("--domain")
+        .arg("github.com")
+        .assert()
+        .success()
+        .stdout(contains("github.com"))
+        .stdout(contains("chrome_csv:chrome-passwords"))
+        .stdout(contains("bitwarden_json:bitwarden-export"));
 }

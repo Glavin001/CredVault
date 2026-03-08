@@ -1,6 +1,15 @@
 # CredVault
 
-CredVault is a Rust-first foundation for a selective credential packaging tool. This repository now includes the core workspace, encrypted bundle format, a CLI, and deterministic fixture-backed browser examples for automated testing.
+CredVault is a Rust-first selective credential packaging tool.
+
+This repository now supports a safe real-world MVP flow:
+
+1. read credentials from **official user-exported files**
+2. normalize and filter them in a unified index
+3. select a subset
+4. package them into encrypted `.credvault` bundles or plaintext interoperability formats
+
+It also keeps deterministic fixtures for unit and integration tests.
 
 ## What is implemented
 
@@ -8,6 +17,9 @@ CredVault is a Rust-first foundation for a selective credential packaging tool. 
   - `crates/credvault-core`: core data model, source registry, filtering, duplicate grouping, bundle encryption, and export rendering
   - `crates/credvault-cli`: CLI for `scan`, `list`, `export`, and `read`
   - `crates/credvault-napi`: minimal Node binding scaffold that exposes JSON-oriented helpers
+- Real import adapters for official export files:
+  - Chrome / Chromium password CSV export
+  - Bitwarden JSON export
 - Native `.credvault` encrypted bundle format using Argon2id + AES-256-GCM
 - Plaintext export renderers for:
   - CSV
@@ -20,19 +32,21 @@ CredVault is a Rust-first foundation for a selective credential packaging tool. 
   - source discovery
   - filtering and duplicate grouping
   - encrypted bundle round-trips
+  - import flows for official export files
   - CLI bundle export and read flows
 
-## Important boundary for this foundation
+## Important security boundary
 
-This repo currently uses **fixture-backed adapters only**. It does **not** include real browser, keychain, or password manager extraction against live user stores.
+This repo supports **official exported files** as the real ingestion path.
 
-That is intentional for this first foundation pass:
+It does **not** implement live extraction from browsers, OS keychains, or password managers.
 
-- the indexing and bundle pipeline can be developed and tested safely
-- the public core API stays stable before platform-specific integration work
-- automated CI can validate deterministic fixtures without depending on macOS keychain prompts or browser lock behavior
+That boundary is intentional:
 
-When we add macOS-specific adapters later, they should be validated on your machine using distribution builds, since that environment can exercise native prompts and real browser profile layouts.
+- users remain in control of what they export
+- the tool avoids bypassing browser and password-manager protections
+- the ingest path is testable in CI and manually reproducible
+- the bundle/index architecture is still reusable for future safe integrations
 
 ## Repository layout
 
@@ -42,6 +56,9 @@ credvault/
 ├── fixtures/
 │   ├── chrome-default.fixture.json
 │   └── chrome-work.fixture.json
+│   └── exports/
+│       ├── chrome-passwords.csv
+│       └── bitwarden-export.json
 ├── crates/
 │   ├── credvault-core/
 │   ├── credvault-cli/
@@ -54,22 +71,37 @@ credvault/
 ### Scan available sources
 
 ```bash
-cargo run -p credvault-cli -- --fixtures fixtures scan
+cargo run -p credvault-cli -- \
+  --chrome-csv fixtures/exports/chrome-passwords.csv \
+  --bitwarden-json fixtures/exports/bitwarden-export.json \
+  scan
 ```
 
 ### List credentials
 
 ```bash
-cargo run -p credvault-cli -- --fixtures fixtures list
-cargo run -p credvault-cli -- --fixtures fixtures list --domain github.com
-cargo run -p credvault-cli -- --fixtures fixtures list --type password --search aws
+cargo run -p credvault-cli -- \
+  --chrome-csv fixtures/exports/chrome-passwords.csv \
+  --bitwarden-json fixtures/exports/bitwarden-export.json \
+  list
+
+cargo run -p credvault-cli -- \
+  --chrome-csv fixtures/exports/chrome-passwords.csv \
+  --bitwarden-json fixtures/exports/bitwarden-export.json \
+  list --domain github.com
+
+cargo run -p credvault-cli -- \
+  --chrome-csv fixtures/exports/chrome-passwords.csv \
+  list --type password --search aws
 ```
 
 ### Export a native encrypted bundle
 
 ```bash
-cargo run -p credvault-cli -- --fixtures fixtures export \
-  --id chrome-default-fixture:login:github-glavin \
+cargo run -p credvault-cli -- \
+  --chrome-csv fixtures/exports/chrome-passwords.csv \
+  export \
+  --domain github.com \
   --format credvault \
   --password demo-password \
   --output demo.credvault
@@ -78,15 +110,22 @@ cargo run -p credvault-cli -- --fixtures fixtures export \
 ### Read a bundle
 
 ```bash
-cargo run -p credvault-cli -- --fixtures fixtures read demo.credvault --password demo-password
+cargo run -p credvault-cli -- read demo.credvault --password demo-password
 ```
 
 ### Export agent config JSON
 
 ```bash
-cargo run -p credvault-cli -- --fixtures fixtures export \
-  --domain github.com \
+cargo run -p credvault-cli -- \
+  --bitwarden-json fixtures/exports/bitwarden-export.json \
+  export --domain platform.openai.com \
   --format agent-config
+```
+
+### Fixture-only test mode
+
+```bash
+cargo run -p credvault-cli -- --fixture-dir fixtures scan
 ```
 
 ## Testing
@@ -97,11 +136,39 @@ Run the current automated suite:
 cargo test
 ```
 
+## Manual verification performed in this repo
+
+These flows were executed successfully during implementation:
+
+```bash
+cargo test
+cargo build --release
+
+target/release/credvault \
+  --chrome-csv fixtures/exports/chrome-passwords.csv \
+  --bitwarden-json fixtures/exports/bitwarden-export.json \
+  scan
+
+target/release/credvault \
+  --chrome-csv fixtures/exports/chrome-passwords.csv \
+  --bitwarden-json fixtures/exports/bitwarden-export.json \
+  list --domain github.com
+
+target/release/credvault \
+  --chrome-csv fixtures/exports/chrome-passwords.csv \
+  export --domain github.com \
+  --format credvault \
+  --password demo-password \
+  --output /tmp/demo.credvault
+
+target/release/credvault read /tmp/demo.credvault --password demo-password
+```
+
 ## Next steps
 
 Suggested next implementation steps after this foundation:
 
-1. add a platform-gated macOS adapter crate/module that reads copied test profile directories rather than live stores first
-2. build a signed macOS release artifact for your local validation
-3. add snapshot fixtures for real-world schema quirks discovered during your macOS testing
-4. expand the Node binding from JSON helpers into typed async APIs
+1. expand importer coverage to more official export formats (1Password CSV, KeePass CSV/XML, Firefox CSV if available)
+2. add a local encrypted workspace file for saved selection presets and audit logs
+3. turn the Node binding scaffold into typed async APIs on a newer Rust toolchain
+4. add desktop UI on top of the now-stable import/list/select/export flow

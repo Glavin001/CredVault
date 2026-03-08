@@ -31,6 +31,10 @@ impl SourceRegistry {
         Self { adapters }
     }
 
+    pub fn add_adapter(&mut self, adapter: DynSourceAdapter) {
+        self.adapters.insert(adapter.source().id.clone(), adapter);
+    }
+
     pub fn discover_sources(&self) -> Vec<CredentialSource> {
         let mut sources: Vec<_> = self
             .adapters

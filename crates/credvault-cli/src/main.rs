@@ -18,8 +18,12 @@ use secrecy::SecretString;
     about = "Safe MVP foundation for scoped credential bundle workflows"
 )]
 struct Cli {
-    #[arg(long, global = true, default_value = "fixtures")]
-    fixtures: PathBuf,
+    #[arg(long = "fixture-dir", global = true)]
+    fixture_dir: Option<PathBuf>,
+    #[arg(long = "chrome-csv", global = true)]
+    chrome_csv: Vec<PathBuf>,
+    #[arg(long = "bitwarden-json", global = true)]
+    bitwarden_json: Vec<PathBuf>,
     #[command(subcommand)]
     command: Commands,
 }
@@ -97,10 +101,15 @@ fn main() {
 }
 
 fn run(cli: Cli) -> Result<()> {
-    let vault = CredVault::from_fixture_dir(&cli.fixtures)?;
+    let vault = if matches!(cli.command, Commands::Read { .. }) {
+        None
+    } else {
+        Some(build_vault(&cli)?)
+    };
 
     match cli.command {
         Commands::Scan => {
+            let vault = vault.as_ref().expect("vault required for scan");
             let sources = vault.discover_sources();
             println!("Sources found:");
             for source in sources {
@@ -121,6 +130,7 @@ fn run(cli: Cli) -> Result<()> {
             types,
             json,
         } => {
+            let vault = vault.as_ref().expect("vault required for list");
             let filter = build_filter(domains, sources.clone(), types, search, None);
             let source_filter = if sources.is_empty() {
                 None
@@ -161,6 +171,7 @@ fn run(cli: Cli) -> Result<()> {
             password,
             password_stdin,
         } => {
+            let vault = vault.as_ref().expect("vault required for export");
             let mut entry_ids = ids;
             if entry_ids.is_empty() {
                 let filter = build_filter(domains, sources.clone(), types, search, None);
@@ -202,7 +213,7 @@ fn run(cli: Cli) -> Result<()> {
             let data = fs::read(bundle)?;
             let password = resolve_password(BundleFormatArg::Credvault, password, password_stdin)?
                 .expect("credvault read requires password");
-            let contents = vault.read_bundle(&data, &password)?;
+            let contents = credvault_core::read_bundle(&data, &password)?;
 
             println!(
                 "Bundle: \"{}\" (created {}, expires {})",
@@ -225,6 +236,24 @@ fn run(cli: Cli) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn build_vault(cli: &Cli) -> Result<CredVault> {
+    let mut builder = CredVault::builder();
+
+    if let Some(fixture_dir) = &cli.fixture_dir {
+        builder = builder.with_fixture_dir(fixture_dir)?;
+    }
+
+    for path in &cli.chrome_csv {
+        builder = builder.with_chrome_csv_export(path)?;
+    }
+
+    for path in &cli.bitwarden_json {
+        builder = builder.with_bitwarden_json_export(path)?;
+    }
+
+    builder.build()
 }
 
 fn build_filter(

@@ -1,0 +1,37 @@
+{
+  "encrypted": false,
+  "items": [
+    {
+      "id": "item-github",
+      "organizationId": null,
+      "folderId": null,
+      "type": 1,
+      "name": "GitHub Personal",
+      "notes": null,
+      "favorite": true,
+      "login": {
+        "username": "glavin",
+        "password": "bitwarden-export-github",
+        "uris": [
+          { "match": null, "uri": "https://github.com/login" }
+        ]
+      }
+    },
+    {
+      "id": "item-openai",
+      "organizationId": null,
+      "folderId": null,
+      "type": 1,
+      "name": "OpenAI Console",
+      "notes": null,
+      "favorite": false,
+      "login": {
+        "username": "glavin",
+        "password": "bitwarden-export-openai",
+        "uris": [
+          { "match": null, "uri": "https://platform.openai.com/" }
+        ]
+      }
+    }
+  ]
+}
