@@ -2,12 +2,12 @@
   "$schema": "https://raw.githubusercontent.com/nicedoc/tauri/refs/heads/dev/crates/tauri-cli/schema.json",
   "productName": "CredVault",
   "version": "0.1.0",
-  "identifier": "com.credvault.app",
+  "identifier": "com.credvault.desktop",
   "build": {
     "frontendDist": "./src-ui/dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "npm run dev --prefix src-ui",
-    "beforeBuildCommand": "npm run build --prefix src-ui"
+    "beforeDevCommand": "cd src-ui && npm run dev",
+    "beforeBuildCommand": "cd src-ui && npm run build"
   },
   "app": {
     "windows": [
